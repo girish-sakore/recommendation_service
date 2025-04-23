@@ -7,6 +7,7 @@ from tensorflow.keras.optimizers import Adam
 import pickle
 import os
 from config import Config
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 class RecommendationTrainer:
     def __init__(self, db):
@@ -16,6 +17,7 @@ class RecommendationTrainer:
         self.item_encoder = LabelEncoder()
     
     def prepare_data(self):
+        print('Running prepare_data')
         data = self.db.get_orders_data()
         df = pd.DataFrame(data)
         
@@ -25,6 +27,7 @@ class RecommendationTrainer:
         return df
     
     def build_model(self, num_users, num_items):
+        print('Running build_model')
         # User embedding
         user_input = Input(shape=(1,), name='user_input')
         user_embedding = Embedding(
@@ -52,6 +55,7 @@ class RecommendationTrainer:
         return model
     
     def train(self):
+        print('Running train')
         df = self.prepare_data()
         
         X = df[['user_idx', 'item_idx']].values

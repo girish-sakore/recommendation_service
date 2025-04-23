@@ -1,8 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from database import MySQLDatabase
-from recommender import Recommender
+# from recommender import Recommender
 from trainer import RecommendationTrainer
+import os
 import uvicorn
 from config import Config
 
@@ -19,7 +20,26 @@ app.add_middleware(
 
 # Initialize components
 db = MySQLDatabase()
-recommender = Recommender()
+recommender = None
+
+def load_recommender():
+    global recommender
+    try:
+        from recommender import Recommender
+        recommender = Recommender()
+        return True
+    except Exception as e:
+        print(f"Failed to load recommender: {e}")
+        return False
+    
+@app.on_event("startup")
+async def startup_event():
+    # Check if model exists, train if not
+    if not os.path.exists(f"{Config.MODEL_PATH}/model.h5"):
+        print("No trained model found. Training new model...")
+        train_model()
+    load_recommender()
+
 
 @app.get("/recommend/user/{user_id}")
 async def user_recommendations(user_id: int, limit: int = 5):
