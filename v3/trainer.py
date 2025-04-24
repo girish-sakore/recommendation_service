@@ -4,6 +4,8 @@ from sklearn.preprocessing import LabelEncoder
 from tensorflow.keras.models import Model, save_model
 from tensorflow.keras.layers import Input, Embedding, Flatten, Dot, Dense
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import MeanSquaredError
+from tensorflow.keras.metrics import MeanAbsoluteError
 import pickle
 import os
 from config import Config
@@ -50,7 +52,12 @@ class RecommendationTrainer:
         dot = Dot(axes=1)([user_vec, item_vec])
         
         model = Model(inputs=[user_input, item_input], outputs=dot)
-        model.compile(optimizer=Adam(0.001), loss='mse', metrics=['mae'])
+        # model.compile(optimizer=Adam(0.001), loss='mse', metrics=['mae'])
+        model.compile(
+            optimizer=Adam(0.001),
+            loss=MeanSquaredError(),
+            metrics=[MeanAbsoluteError()]
+        )
         
         return model
     

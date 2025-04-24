@@ -20,29 +20,38 @@ app.add_middleware(
 
 # Initialize components
 db = MySQLDatabase()
-recommender = None
+app.state.recommender = None
 
 def load_recommender():
-    global recommender
     try:
+        print("[load_recommender] Importing Recommender...")
         from recommender import Recommender
-        recommender = Recommender()
+        print("[load_recommender] Instantiating Recommender...")
+        app.state.recommender = Recommender()
+        print("[load_recommender] Recommender loaded successfully.")
         return True
     except Exception as e:
-        print(f"Failed to load recommender: {e}")
+        print(f"[load_recommender] Failed to load recommender: {e}")
+        app.state.recommender = None
         return False
-    
+
 @app.on_event("startup")
 async def startup_event():
-    # Check if model exists, train if not
+    print("[Startup] Checking if model exists...")
     if not os.path.exists(f"{Config.MODEL_PATH}/model.h5"):
-        print("No trained model found. Training new model...")
+        print("[Startup] No trained model found. Training...")
         train_model()
-    load_recommender()
+
+    print("[Startup] Loading recommender...")
+    loaded = load_recommender()
+    print(f"[Startup] Recommender loaded? {loaded}")
 
 
 @app.get("/recommend/user/{user_id}")
 async def user_recommendations(user_id: int, limit: int = 5):
+    recommender = app.state.recommender
+    if recommender is None:
+        raise HTTPException(status_code=500, detail="Recommender not loaded.")
     try:
         recommendations = recommender.recommend_for_user(user_id, limit)
         if recommendations is None:
@@ -54,7 +63,12 @@ async def user_recommendations(user_id: int, limit: int = 5):
 
 @app.get("/recommend/similar/{item_id}")
 async def similar_items(item_id: int, limit: int = 5):
+    recommender = app.state.recommender
+    if recommender is None:
+        raise HTTPException(status_code=500, detail="Recommender not loaded.")
     try:
+        print('----------------------')
+        print(recommender)
         similar = recommender.similar_items(item_id, limit)
         if similar is None:
             similar = db.get_popular_items(limit)
@@ -73,5 +87,11 @@ async def train_model():
     finally:
         db.close()
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/health")
+async def health():
+    return {
+        "recommender_loaded": app.state.recommender is not None
+    }
+
+# if __name__ == "__main__":
+#     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="debug", reload=True, debug=True,)
