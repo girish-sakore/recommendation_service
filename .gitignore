@@ -1,2 +1,4 @@
 v3/rec_env/*
 v2/venv/*
+v3/__pycache__/
+v2/__pycache__/
