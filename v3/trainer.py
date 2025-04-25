@@ -19,15 +19,40 @@ class RecommendationTrainer:
         self.item_encoder = LabelEncoder()
     
     def prepare_data(self):
-        print('Running prepare_data')
-        data = self.db.get_orders_data()
+        # Get order data with restaurant information
+        data = self.db.get_orders_data_with_restaurants()
         df = pd.DataFrame(data)
         
+        # Encode users and items
         df['user_idx'] = self.user_encoder.fit_transform(df['user_id'])
         df['item_idx'] = self.item_encoder.fit_transform(df['menu_item_id'])
         
+        # Create co-occurrence features (items bought together)
+        df = self._add_cooccurrence_features(df)
+        
+        # Store restaurant mapping
+        self.item_restaurant_mapping = df[['menu_item_id', 'restaurant_id']].drop_duplicates()
+        
         return df
-    
+
+    def _add_cooccurrence_features(self, df):
+        """Add features about items commonly ordered together"""
+        # Get items commonly ordered together in the same restaurant
+        cooccurrence = self.db.get_cooccurrence_stats()
+        cooccurrence_df = pd.DataFrame(cooccurrence)
+        
+        # Merge with main dataframe
+        df = df.merge(
+            cooccurrence_df,
+            on=['menu_item_id', 'restaurant_id'],
+            how='left'
+        )
+        
+        # Fill NA for items without co-occurrence data
+        df['cooccurrence_score'] = df['cooccurrence_score'].fillna(0)
+        
+        return df
+
     def build_model(self, num_users, num_items):
         print('Running build_model')
         # User embedding
@@ -95,5 +120,9 @@ class RecommendationTrainer:
                 'user_encoder': self.user_encoder,
                 'item_encoder': self.item_encoder
             }, f)
+        
+        # Save item-restaurant mapping
+        with open(f"{self.config.MODEL_PATH}/item_restaurant_mapping.pkl", 'wb') as f:
+            pickle.dump(self.item_restaurant_mapping, f)
         
         return history
