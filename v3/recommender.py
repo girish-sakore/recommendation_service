@@ -84,44 +84,53 @@ class Recommender:
             return self._fallback_recommendations(cart_item_id, None, top_n)
 
     def similar_items(self, item_id: int, top_n: int = 5) -> Optional[List[int]]:
-        """Find similar items in the same restaurant"""
+        """Find similar items in the same restaurant without user history"""
         try:
-            # Get restaurant ID first
+            # 1. Get restaurant ID for the target item
             restaurant_id = self.db.get_restaurant_for_item(item_id)
             if not restaurant_id:
                 logger.warning(f"No restaurant found for item {item_id}")
                 return None
+
+            # 2. Get all items from the same restaurant
+            restaurant_items = self.db.get_menu_items_by_restaurant(restaurant_id)
+            restaurant_item_ids = [item['id'] for item in restaurant_items]
             
-            # Get item index
+            # 3. Filter out current item and items without embeddings
+            candidate_items = [
+                i for i in restaurant_item_ids 
+                if i != item_id and i in self.item_encoder.classes_
+            ]
+            
+            if not candidate_items:
+                logger.warning(f"No valid candidate items in restaurant {restaurant_id}")
+                return None
+
+            # 4. Get item embedding (handle unknown items)
             try:
                 item_idx = self.item_encoder.transform([item_id])[0]
             except ValueError:
-                logger.warning(f"Unknown item ID: {item_id}")
+                logger.warning(f"Item {item_id} not in model vocabulary")
                 return None
-            
-            # Get item embedding weights
+
+            # 5. Calculate similarities
             item_emb_layer = self.model.get_layer('item_embedding')
             item_emb_weights = item_emb_layer.get_weights()[0]
             
+            # Get embeddings for all candidate items
+            candidate_indices = [self.item_encoder.transform([i])[0] for i in candidate_items]
+            candidate_embeddings = item_emb_weights[candidate_indices]
+
             # Calculate cosine similarities
             from sklearn.metrics.pairwise import cosine_similarity
-            similarities = cosine_similarity(item_emb_weights[item_idx].reshape(1, -1), item_emb_weights)
+            target_embedding = item_emb_weights[item_idx].reshape(1, -1)
+            similarities = cosine_similarity(target_embedding, candidate_embeddings)[0]
+
+            # 6. Combine and sort results
+            ranked_items = sorted(zip(candidate_items, similarities), 
+                            key=lambda x: x[1], reverse=True)
             
-            # Get all item IDs
-            all_item_ids = self.item_encoder.inverse_transform(np.arange(len(self.item_encoder.classes_)))
-            
-            # Create a dataframe of items with their similarities
-            similar_items = []
-            for idx, sim in enumerate(similarities[0]):
-                current_id = all_item_ids[idx]
-                if current_id != item_id:  # Exclude self
-                    # Verify item is from same restaurant
-                    if self._is_from_same_restaurant(current_id, restaurant_id):
-                        similar_items.append((current_id, sim))
-            
-            # Sort and return top N
-            similar_items.sort(key=lambda x: x[1], reverse=True)
-            return [item[0] for item in similar_items[:top_n]]
+            return [item[0] for item in ranked_items[:top_n]]
             
         except Exception as e:
             logger.error(f"Error in similar_items: {str(e)}", exc_info=True)
